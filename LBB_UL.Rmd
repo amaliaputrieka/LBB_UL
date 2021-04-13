@@ -1,0 +1,211 @@
+---
+title: "Music Suggestion"
+author: "Amalia Purieka"
+date: "2/24/2021"
+output: 
+ html_document:
+   df_print: paged
+---
+
+```{r setup, include=FALSE, message =FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Background
+
+We are going to import data on music composition. We will classify music suggestions using machine learning models through the raw data. We will generate a list of tracks that can be a suggestion based on the previous track type.
+
+# Data Pre-Processing
+
+## Import Library
+
+```{r}
+# Import library
+library(dplyr)
+library(tidyr)
+library(GGally)
+library(gridExtra)
+library(factoextra)
+library(FactoMineR)
+library(plotly)
+```
+
+## Import Data
+
+The data come from an online source which generated from spotify as well
+https://www.kaggle.com/zaheenhamidani/ultimate-spotify-tracks-db
+
+```{r}
+spotify <- read.csv("SpotifyFeatures.csv")
+head(spotify)
+```
+Let's observe the data type using glimpse()
+
+```{r}
+glimpse(spotify)
+```
+
+Our data has 232725 Rows and 18 Columns
+
+## Check Missing Data
+
+```{r}
+colSums(is.na(spotify))
+```
+
+Our data has no missing data
+
+## Filter Popular Song
+
+People will tend to pick a song from the popular one, well we filter as below
+
+```{r}
+spotify_filter <- spotify %>% 
+  filter(popularity>=80 & mode == "Major") 
+  
+spotify_filter
+```
+## Remove Unnecessary Variables
+
+In this case, we are going to analyse music suggestion based on the song's sompostion from previous choice. Thus we need to remove the other non-related variable
+
+```{r}
+spotify_co <- spotify_filter %>% 
+ select(-c(artist_name, track_name, track_id, mode, time_signature, key, mode, duration_ms, genre, popularity, tempo))
+
+head(spotify_co)
+```
+
+# Exploratory Data Analysis
+
+```{r}
+summary(spotify_co)
+```
+
+## Scale Data Variances
+
+First, check the original variances
+
+```{r}
+plot(prcomp(spotify_co))
+```
+
+From the above chart, we know that gap in our data is quite high, we need to scale it
+
+```{r}
+# scaling
+spotify_scale <- scale(spotify_co)
+
+# check the PCA again
+plot(prcomp(spotify_scale))
+```
+Now our data has normal gap.
+
+# Model PCA
+
+```{r}
+#menggunakan data yang sudah discale
+pca_spotify <- PCA(spotify_scale, scale. = F)
+```
+From the PCA observation, we could see there are outliers like data 487.
+
+```{r}
+pca_spotify
+```
+
+```{r}
+summary(pca_spotify)
+```
+
+# Choosing Optimum K
+
+Having performed PCA and scaled the data, then we have to utilize K-means clustering to find the optimum cluster number to our model data. Use the defined kmeansTunning() function below to find the optimum K using Elbow method.
+
+```{r}
+fviz_nbclust(spotify_scale, kmeans, method = "wss")
+```
+
+We decided to use 6 based on above chart.
+
+# Clustering
+
+In this process, K value will be implemented into clustering process. Create new column cluster for classification on each observations.
+
+```{r}
+# set.seed to ensure reproducible example
+set.seed(101)
+
+# use kmeans (centers=clusters, which is 6)
+spotify_cluster <- kmeans(spotify_co, centers = 6)
+
+# show how many observations on each cluster
+data.frame(cbind(cluster=c(1:6), observation=spotify_cluster$size))
+```
+
+```{r}
+spotify_filter$cluster <- spotify_cluster$cluster
+spotify_co$cluster <- spotify_cluster$cluster
+tail(spotify_filter)
+```
+```{r}
+fviz_cluster(object=spotify_cluster,
+             data = spotify_co)
+```
+
+# Goodness of Fit
+
+We can check the goodness of Fit using 3 values below: 
+
+## Within Sum of Squares tot.withins
+
+Signify the ‘length’ from each observation to its centroid in each cluster
+
+```{r}
+spotify_cluster$tot.withinss
+```
+
+## Total Sum of Squares totss
+
+Signify the ‘length’ from each observation to global sample mean
+
+```{r}
+# totss
+spotify_cluster$totss
+```
+
+## Between Sum of Squares betweenss
+
+Signify the ‘length’ from each centroid from each cluster to the global sample mean
+
+```{r}
+spotify_cluster$betweenss
+```
+
+
+Another ‘goodness’ measure can be signified with a value in betweenss/totss, the closer the value to 1 or 100%, the better:
+
+```{r}
+# `betweenss`/`tot.withinss`
+((spotify_cluster$betweenss)/(spotify_cluster$totss))*100
+```
+
+Our model has good accuracy which above 90%. We will be able to hear music based on our previous type song of choice.
+
+Well, let's try to review our model of song's suggestion.
+```{r}
+spotify_filter %>% 
+  group_by(cluster) %>% 
+  summarise_all(mean) %>% 
+  select(cluster, acousticness, danceability, energy, instrumentalness, speechiness, valence)
+```
+
+```{r}
+spotify_filter %>% 
+  filter(cluster == 2, genre == "Pop") %>% 
+  head(5)
+```
+
+
+# Conclusion
+
+Our model has generated accuracy above 90%, which means a pretty good suggestion for our next song. Based on our clustering result, we can also use our model to initially set up music based on personal mood since the model's cluster represents music characteristics.
